@@ -45,8 +45,10 @@ import (
 )
 
 const (
-	configFileName     = "config.v2.json"
-	hostConfigFileName = "hostconfig.json"
+	configFileName           = "config.v2.json"
+	configFileNameUpdate     = "config.v2.json.update"
+	hostConfigFileName       = "hostconfig.json"
+	hostConfigFileNameUpdate = "hostconfig.json.update"
 )
 
 // ExitStatus provides exit reasons for a container.
@@ -165,10 +167,58 @@ func (container *Container) FromDisk() error {
 
 	return container.readHostConfig()
 }
+func (container *Container) FromDiskUpdate() error {
+	pth, err := container.ConfigPathUpdate()
+	if err != nil {
+		return err
+	}
+
+	jsonSource, err := os.Open(pth)
+	if err != nil {
+		return err
+	}
+	defer jsonSource.Close()
+
+	dec := json.NewDecoder(jsonSource)
+
+	// Load container settings
+	if err := dec.Decode(container); err != nil {
+		return err
+	}
+
+	// Ensure the operating system is set if blank. Assume it is the OS of the
+	// host OS if not, to ensure containers created before multiple-OS
+	// support are migrated
+	if container.OS == "" {
+		container.OS = runtime.GOOS
+	}
+
+	return container.readHostConfigUpdate()
+}
 
 // toDisk writes the container's configuration (config.v2.json, hostconfig.json)
 // to disk and returns a deep copy.
 func (container *Container) toDisk() (*Container, error) {
+	_, err1 := os.Stat(filepath.Join(container.Root, configFileNameUpdate))
+	_, err2 := os.Stat(filepath.Join(container.Root, hostConfigFileNameUpdate))
+	state := container.State
+	networkSettings := container.NetworkSettings
+	if err1 == nil && err2 == nil {
+		logrus.Debugln("Try reload container from disk update file")
+		updateContainer := NewBaseContainer(container.ID, container.Root)
+		updateContainer.FromDiskUpdate()
+		updateContainer.State = state
+		updateContainer.NetworkSettings = networkSettings
+
+		container = updateContainer
+		logrus.Debugf("update container pid %d, raw container pid:%d",
+			updateContainer.State.Pid,
+			container.State.Pid)
+		logrus.Debugln("Success reload container from disk update file")
+	} else {
+		logrus.Errorf("Check update file error,err1:%v,err2:%v", err1, err2)
+	}
+
 	pth, err := container.ConfigPath()
 	if err != nil {
 		return nil, err
@@ -236,6 +286,44 @@ func (container *Container) readHostConfig() error {
 
 	return nil
 }
+func (container *Container) readHostConfigUpdate() error {
+	container.HostConfig = &containertypes.HostConfig{}
+	// If the hostconfig file does not exist, do not read it.
+	// (We still have to initialize container.HostConfig,
+	// but that's OK, since we just did that above.)
+	pth, err := container.HostConfigPathUpdate()
+	if err != nil {
+		return err
+	}
+
+	f, err := os.Open(pth)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+
+	if err := json.NewDecoder(f).Decode(&container.HostConfig); err != nil {
+		return err
+	}
+
+	if container.HostConfig.DNS == nil {
+		container.HostConfig.DNS = make([]string, 0)
+	}
+
+	if container.HostConfig.DNSSearch == nil {
+		container.HostConfig.DNSSearch = make([]string, 0)
+	}
+
+	if container.HostConfig.DNSOptions == nil {
+		container.HostConfig.DNSOptions = make([]string, 0)
+	}
+	//container.InitDNSHostConfig()
+
+	return nil
+}
 
 // WriteHostConfig saves the host configuration on disk for the container,
 // and returns a deep copy of the saved object. Callers must hold a Container lock.
@@ -246,6 +334,33 @@ func (container *Container) WriteHostConfig() (*containertypes.HostConfig, error
 	)
 
 	pth, err := container.HostConfigPath()
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := ioutils.NewAtomicFileWriter(pth, 0600)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	w := io.MultiWriter(&buf, f)
+	if err := json.NewEncoder(w).Encode(&container.HostConfig); err != nil {
+		return nil, err
+	}
+
+	if err := json.NewDecoder(&buf).Decode(&deepCopy); err != nil {
+		return nil, err
+	}
+	return &deepCopy, nil
+}
+func (container *Container) WriteHostConfigUpdate() (*containertypes.HostConfig, error) {
+	var (
+		buf      bytes.Buffer
+		deepCopy containertypes.HostConfig
+	)
+
+	pth, err := container.HostConfigPathUpdate()
 	if err != nil {
 		return nil, err
 	}
@@ -352,10 +467,16 @@ func (container *Container) ExitOnNext() {
 func (container *Container) HostConfigPath() (string, error) {
 	return container.GetRootResourcePath(hostConfigFileName)
 }
+func (container *Container) HostConfigPathUpdate() (string, error) {
+	return container.GetRootResourcePath(hostConfigFileNameUpdate)
+}
 
 // ConfigPath returns the path to the container's JSON config
 func (container *Container) ConfigPath() (string, error) {
 	return container.GetRootResourcePath(configFileName)
+}
+func (container *Container) ConfigPathUpdate() (string, error) {
+	return container.GetRootResourcePath(configFileNameUpdate)
 }
 
 // CheckpointDir returns the directory checkpoints are stored in
