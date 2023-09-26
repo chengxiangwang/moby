@@ -105,7 +105,7 @@ func (daemon *Daemon) handleContainerExit(c *container.Container, e *libcontaine
 	defer c.Unlock() // needs to be called before autoRemove
 
 	daemon.setStateCounter(c)
-	cpErr := c.CheckpointTo(daemon.containersReplica)
+	cpErr := c.CheckpointTo(daemon.containersReplica, daemon.containers)
 
 	daemon.LogContainerEventWithAttributes(c, "die", attributes)
 
@@ -125,7 +125,7 @@ func (daemon *Daemon) handleContainerExit(c *container.Container, e *libcontaine
 				c.Lock()
 				c.SetStopped(&exitStatus)
 				daemon.setStateCounter(c)
-				c.CheckpointTo(daemon.containersReplica)
+				c.CheckpointTo(daemon.containersReplica, daemon.containers)
 				c.Unlock()
 				defer daemon.autoRemove(c)
 				if err != restartmanager.ErrRestartCanceled {
@@ -156,7 +156,7 @@ func (daemon *Daemon) ProcessEvent(id string, e libcontainerdtypes.EventType, ei
 		defer c.Unlock()
 		c.OOMKilled = true
 		daemon.updateHealthMonitor(c)
-		if err := c.CheckpointTo(daemon.containersReplica); err != nil {
+		if err := c.CheckpointTo(daemon.containersReplica, daemon.containers); err != nil {
 			return err
 		}
 
@@ -253,7 +253,7 @@ func (daemon *Daemon) ProcessEvent(id string, e libcontainerdtypes.EventType, ei
 
 			daemon.initHealthMonitor(c)
 
-			if err := c.CheckpointTo(daemon.containersReplica); err != nil {
+			if err := c.CheckpointTo(daemon.containersReplica, daemon.containers); err != nil {
 				return err
 			}
 			daemon.LogContainerEvent(c, "start")
@@ -267,7 +267,7 @@ func (daemon *Daemon) ProcessEvent(id string, e libcontainerdtypes.EventType, ei
 			c.Paused = true
 			daemon.setStateCounter(c)
 			daemon.updateHealthMonitor(c)
-			if err := c.CheckpointTo(daemon.containersReplica); err != nil {
+			if err := c.CheckpointTo(daemon.containersReplica, daemon.containers); err != nil {
 				return err
 			}
 			daemon.LogContainerEvent(c, "pause")
@@ -281,7 +281,7 @@ func (daemon *Daemon) ProcessEvent(id string, e libcontainerdtypes.EventType, ei
 			daemon.setStateCounter(c)
 			daemon.updateHealthMonitor(c)
 
-			if err := c.CheckpointTo(daemon.containersReplica); err != nil {
+			if err := c.CheckpointTo(daemon.containersReplica, daemon.containers); err != nil {
 				return err
 			}
 			daemon.LogContainerEvent(c, "unpause")

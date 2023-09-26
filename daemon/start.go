@@ -69,7 +69,7 @@ func (daemon *Daemon) ContainerStart(ctx context.Context, name string, hostConfi
 				// old networks. It is a deprecated feature and has been removed in Docker 1.12
 				ctr.NetworkSettings.Networks = nil
 			}
-			if err := ctr.CheckpointTo(daemon.containersReplica); err != nil {
+			if err := ctr.CheckpointTo(daemon.containersReplica, daemon.containers); err != nil {
 				return errdefs.System(err)
 			}
 			ctr.InitDNSHostConfig()
@@ -126,7 +126,7 @@ func (daemon *Daemon) containerStart(ctx context.Context, container *container.C
 			if container.ExitCode() == 0 {
 				container.SetExitCode(exitUnknown)
 			}
-			if err := container.CheckpointTo(daemon.containersReplica); err != nil {
+			if err := container.CheckpointTo(daemon.containersReplica, daemon.containers); err != nil {
 				logrus.Errorf("%s: failed saving state on start failure: %v", container.ID, err)
 			}
 			container.Reset(false)
@@ -201,7 +201,7 @@ func (daemon *Daemon) containerStart(ctx context.Context, container *container.C
 
 	daemon.initHealthMonitor(container)
 
-	if err := container.CheckpointTo(daemon.containersReplica); err != nil {
+	if err := container.CheckpointTo(daemon.containersReplica, daemon.containers); err != nil {
 		logrus.WithError(err).WithField("container", container.ID).
 			Errorf("failed to store container")
 	}

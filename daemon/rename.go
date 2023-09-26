@@ -83,7 +83,7 @@ func (daemon *Daemon) ContainerRename(oldName, newName string) error {
 		daemon.linkIndex.unlink(oldName+k, v, container)
 		daemon.containersReplica.ReleaseName(oldName + k)
 	}
-	if err = container.CheckpointTo(daemon.containersReplica); err != nil {
+	if err = container.CheckpointTo(daemon.containersReplica, daemon.containers); err != nil {
 		return err
 	}
 
@@ -100,7 +100,7 @@ func (daemon *Daemon) ContainerRename(oldName, newName string) error {
 		if err != nil {
 			container.Name = oldName
 			container.NetworkSettings.IsAnonymousEndpoint = oldIsAnonymousEndpoint
-			if e := container.CheckpointTo(daemon.containersReplica); e != nil {
+			if e := container.CheckpointTo(daemon.containersReplica, daemon.containers); e != nil {
 				logrus.Errorf("%s: Failed in writing to Disk on rename failure: %v", container.ID, e)
 			}
 		}

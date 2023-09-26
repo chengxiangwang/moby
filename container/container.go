@@ -198,7 +198,7 @@ func (container *Container) FromDiskUpdate() error {
 
 // toDisk writes the container's configuration (config.v2.json, hostconfig.json)
 // to disk and returns a deep copy.
-func (container *Container) toDisk() (*Container, error) {
+func (container *Container) toDisk(containers Store) (*Container, error) {
 	_, err1 := os.Stat(filepath.Join(container.Root, configFileNameUpdate))
 	_, err2 := os.Stat(filepath.Join(container.Root, hostConfigFileNameUpdate))
 	state := container.State
@@ -208,7 +208,10 @@ func (container *Container) toDisk() (*Container, error) {
 		updateContainer := NewBaseContainer(container.ID, container.Root)
 		updateContainer.FromDiskUpdate()
 		updateContainer.State = state
+
+		updateNSPorts := updateContainer.NetworkSettings.Ports
 		updateContainer.NetworkSettings = networkSettings
+		updateContainer.NetworkSettings.Ports = updateNSPorts
 
 		container = updateContainer
 		logrus.Debugf("update container pid %d, raw container pid:%d",
@@ -245,16 +248,27 @@ func (container *Container) toDisk() (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	memContainer := containers.Get(container.ID)
+
+	if memContainer != nil {
+		memContainer.NetworkSettings.Ports = container.NetworkSettings.Ports
+		memContainer.Config.ExposedPorts = container.Config.ExposedPorts
+		memContainer.HostConfig.PortBindings = container.HostConfig.PortBindings
+	}
+	containers.Add(container.ID, memContainer)
+
 	return &deepCopy, nil
 }
 
 // CheckpointTo makes the Container's current state visible to queries, and persists state.
 // Callers must hold a Container lock.
-func (container *Container) CheckpointTo(store *ViewDB) error {
-	deepCopy, err := container.toDisk()
+func (container *Container) CheckpointTo(store *ViewDB, containers Store) error {
+	deepCopy, err := container.toDisk(containers)
 	if err != nil {
 		return err
 	}
+
 	return store.Save(deepCopy)
 }
 
