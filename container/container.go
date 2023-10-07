@@ -254,7 +254,13 @@ func (container *Container) toDisk(containers Store) (*Container, error) {
 	if memContainer != nil {
 		memContainer.NetworkSettings.Ports = container.NetworkSettings.Ports
 		memContainer.Config.ExposedPorts = container.Config.ExposedPorts
+		memContainer.Config.Env = container.Config.Env
+		memContainer.Config.Labels = container.Config.Labels
+		memContainer.Config.Image = container.Config.Image
 		memContainer.HostConfig.PortBindings = container.HostConfig.PortBindings
+		memContainer.HostConfig.DeviceRequests = container.HostConfig.DeviceRequests
+		memContainer.HostConfig.Memory = container.HostConfig.Memory
+		memContainer.HostConfig.CpusetCpus = container.HostConfig.CpusetCpus
 	}
 	containers.Add(container.ID, memContainer)
 
